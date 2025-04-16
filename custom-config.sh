@@ -107,6 +107,7 @@ echo 'CONFIG_PACKAGE_usbutils=y' >> $BUILDROOT/.config
 echo 'CONFIG_PACKAGE_vxlan=y' >> $BUILDROOT/.config
 echo 'CONFIG_PACKAGE_wget-ssl=y' >> $BUILDROOT/.config
 echo 'CONFIG_PACKAGE_wireguard-tools=y' >> $BUILDROOT/.config
+echo 'CONFIG_PACKAGE_wpad-basic-mbedtls=n' >> $BUILDROOT/.config
 echo 'CONFIG_PACKAGE_wpad-mbedtls=y' >> $BUILDROOT/.config
 echo 'CONFIG_PACKAGE_xtables-nft=y' >> $BUILDROOT/.config
 echo 'CONFIG_PACKAGE_zlib=y' >> $BUILDROOT/.config
