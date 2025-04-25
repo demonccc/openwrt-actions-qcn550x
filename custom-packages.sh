@@ -5,5 +5,5 @@
 
 # torguardvpn's easymesh
 
-git clone https://github.com/torguardvpn/luci-app-easymesh.git
-mv luci-app-easymesh $BUILDROOT/package
+#git clone https://github.com/torguardvpn/luci-app-easymesh.git
+#mv luci-app-easymesh $BUILDROOT/package
