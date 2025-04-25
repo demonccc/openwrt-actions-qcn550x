@@ -12,6 +12,7 @@ echo 'CONFIG_PACKAGE_ath10k-firmware-qca9984-ct=n' >> $BUILDROOT/.config
 echo 'CONFIG_PACKAGE_batctl-full=y' >> $BUILDROOT/.config
 echo 'CONFIG_PACKAGE_cgi-io=y' >> $BUILDROOT/.config
 echo 'CONFIG_PACKAGE_coreutils=y' >> $BUILDROOT/.config
+echo 'CONFIG_PACKAGE_dnsmasq=n' >> $BUILDROOT/.config
 echo 'CONFIG_PACKAGE_dnsmasq-full=y' >> $BUILDROOT/.config
 echo 'CONFIG_PACKAGE_ip-full=y' >> $BUILDROOT/.config
 echo 'CONFIG_PACKAGE_iptables-nft=y' >> $BUILDROOT/.config
