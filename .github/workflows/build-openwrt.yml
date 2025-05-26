@@ -22,8 +22,8 @@ permissions:
   contents: write
 
 env:
-  REPO_URL: https://github.com/demonccc/openwrt.git
-  REPO_BRANCH: openwrt-23.05-archerA9v6
+  REPO_URL: https://github.com/spike0en/openwrt.git
+  REPO_BRANCH: 24.10.1-qcn550x
   BUILDROOT: ${{ github.workspace }}/openwrt
   DEPENDENCIES: ${{ github.workspace }}/dependencies-ubuntu.txt
   CUSTOM_FEEDS_SH: ${{ github.workspace }}/custom-feeds.sh
