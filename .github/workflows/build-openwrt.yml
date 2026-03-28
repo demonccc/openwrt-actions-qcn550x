@@ -1,179 +1,83 @@
-name: Build OpenWrt
+name: EA8300 25.12 - Fast Image Builder
 
 on:
-  repository_dispatch:
   workflow_dispatch:
-    inputs:
-      ssh:
-        description: 'SSH connection to Actions'
-        required: true
-        default: 'false'
-        type: choice
-        options:
-        - true
-        - false
-      version:
-        description: 'OpenWrt version'
-        required: true
-        default: 'main'
-        type: string
 
 permissions:
   contents: write
 
 env:
-  REPO_URL: https://github.com/spike0en/openwrt.git
-  REPO_BRANCH: 24.10.1-qcn550x
-  BUILDROOT: ${{ github.workspace }}/openwrt
-  DEPENDENCIES: ${{ github.workspace }}/dependencies-ubuntu.txt
-  CUSTOM_FEEDS_SH: ${{ github.workspace }}/custom-feeds.sh
-  CUSTOM_PACKAGES_SH: ${{ github.workspace }}/custom-packages.sh
-  CUSTOM_CONFIG_SH: ${{ github.workspace }}/custom-config.sh
-  TZ: America/Buenos_Aires
+  # Versión oficial de OpenWrt 25.12.0 para ipq40xx/generic
+  IB_URL: https://downloads.openwrt.org/releases/25.12.0/targets/ipq40xx/generic/openwrt-imagebuilder-25.12.0-ipq40xx-generic.Linux-x86_64.tar.xz
+  IB_DIR: openwrt-imagebuilder-25.12.0-ipq40xx-generic.Linux-x86_64
+  # TU LISTA DE PAQUETES:
+  PACKAGES: "apk-mbedtls ath10k-board-qca4019 -ath10k-firmware-qca4019-ct base-files ca-bundle -dnsmasq dropbear firewall4 fstools -kmod-ath10k-ct kmod-gpio-button-hotplug kmod-leds-gpio kmod-nft-offload kmod-usb-dwc3 kmod-usb-dwc3-qcom kmod-usb3 libc libgcc libustream-mbedtls logd mtd netifd nftables odhcp6c odhcpd-ipv6only ppp ppp-mod-pppoe procd-ujail uboot-envtools uci uclient-fetch urandom-seed urngd -wpad-basic-mbedtls -ath10k-firmware-qca9888-ct kmod-usb-ledtrig-usbport luci luci-app-attendedsysupgrade batctl-full dawn dnsmasq-full kmod-batman-adv luci-app-dawn luci-proto-batman-adv mosquitto-nossl mosquitto-client-nossl libmosquitto-nossl opennds wpad-mbedtls kmod-ath10k ath10k-firmware-qca4019 ath10k-firmware-qca9888"
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
-
+    runs-on: ubuntu-latest
     steps:
-    - name: Initialization environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
-      run: |
-        sudo apt-get -qq update && sudo apt-get -qq upgrade
-        sudo apt-get -qq install $(cat $DEPENDENCIES)
-        sudo apt-get -qq autoremove --purge
-        sudo apt-get -qq clean
-        sudo timedatectl set-timezone "$TZ"
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Maximize build disk space
-      uses: easimon/maximize-build-space@master
-      with:
-        remove-dotnet: true
-        remove-android: true
-        remove-haskell: true
-        remove-codeql: true
-        remove-docker-images: true
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses5-dev libssl-dev zlib1g-dev gawk wget gettext python3 rsync file
+          sudo timedatectl set-timezone "America/Buenos_Aires"
 
-    - name: Checkout
-      uses: actions/checkout@main
+      - name: Download & Extract Image Builder
+        run: |
+          wget -q $IB_URL
+          tar -xJf *.tar.xz
+          mv $IB_DIR ib
+          echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
-    - name: Download the sources
-      run: git clone --branch $REPO_BRANCH $REPO_URL $BUILDROOT
+      - name: Fast Build Firmware (IB)
+        id: compile
+        run: |
+          cd ib
+          # Convertimos los '-' en '^' para que el Image Builder entienda que debe quitar esos paquetes
+          PACKAGES_IB=$(echo "$PACKAGES" | sed 's/ -/ ^/g')
+          
+          # Si tenés una carpeta llamada 'files' en tu repo, se inyectará la configuración automáticamente
+          EXTRA_FILES=""
+          if [ -d "../files" ]; then
+            EXTRA_FILES="FILES=../files"
+          fi
 
-    - name: Auto select a specific code revision
-      id: autoselect
-      if: github.event.client_payload.version == 'stable'
-      run: |
-        cd $BUILDROOT && git checkout $(git tag --sort=-creatordate | head -n1)
-        echo "status=success" >> $GITHUB_OUTPUT
+          echo "Iniciando compilación para Linksys EA8300..."
+          make image PROFILE="linksys_ea8300" PACKAGES="$PACKAGES_IB" $EXTRA_FILES V=s
+          echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: Manual select a specific code revision
-      id: manualselect
-      if: github.event.inputs.version != 'snapshot'
-      run: |
-        cd $BUILDROOT && git checkout ${{ github.event.inputs.version }}
-        echo "status=success" >> $GITHUB_OUTPUT
+      - name: Organize files
+        id: organize
+        if: steps.compile.outputs.status == 'success'
+        run: |
+          cd ib/bin/targets/ipq40xx/generic/
+          # Limpiamos archivos que no son la imagen final
+          rm -rf packages sha256sums config.buildinfo feeds.buildinfo version.buildinfo
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: Cache
-      uses: stupidloud/cachewrtbuild@main
-      with:
-        ccache: 'false'
-        clean: 'false'
-        mixkey: 'ath79'
-        prefix: ${{ github.workspace }}/openwrt
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        if: steps.organize.outputs.status == 'success'
+        with:
+          name: OpenWrt_EA8300_25.12_${{ env.FILE_DATE }}
+          path: ${{ env.FIRMWARE }}/*.bin
 
-    - name: Load custom
-      run: |
-        chmod +x custom-*.sh
-        $CUSTOM_FEEDS_SH
-        $BUILDROOT/scripts/feeds update -a && $BUILDROOT/scripts/feeds install -a
-        $CUSTOM_PACKAGES_SH
-        $CUSTOM_CONFIG_SH
-
-    - name: Start SSH via tmate
-      uses: rdp-studio/ssh2actions@main
-      if: github.event.inputs.ssh == 'true'
-
-    - name: Build the firmware image
-      id: compile
-      run: |
-        cd $BUILDROOT && echo "$(($(nproc)+1)) thread compile"
-        IGNORE_ERRORS=m make -j$(($(nproc)+1)) defconfig download clean world || IGNORE_ERRORS=m make -j1 defconfig download clean world V=s
-        echo "status=success" >> $GITHUB_OUTPUT
-        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=$(cat DEVICE_NAME)" >> $GITHUB_ENV
-        echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-
-    - name: Check space usage
-      run: df -hT
-
-    - name: Upload bin directory
-      uses: actions/upload-artifact@main
-      if: steps.compile.outputs.status == 'success'
-      with:
-        name: OpenWrt_bin_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
-        path: ${{ env.BUILDROOT }}/bin
-
-    - name: Organize files
-      id: organize
-      run: |
-        cd $BUILDROOT/bin/targets/*/* && rm -rf packages
-        { echo '### SHA256SUMS'; echo '```txt'; cat sha256sums; echo '```'; } > $BUILDROOT/SHA256SUMS
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
-
-    - name: Upload firmware directory
-      uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success'
-      with:
-        name: OpenWrt_firmware_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
-        path: ${{ env.FIRMWARE }}
-
-    - name: Generate stable Release Tag
-      id: stabletag
-      if: steps.autoselect.outputs.status == 'success' || steps.manualselect.outputs.status == 'success'
-      run: |
-        echo "release_tag=$(cd $BUILDROOT && git describe --tags --abbrev=0 --exact-match)_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-        echo "status=success" >> $GITHUB_OUTPUT
-
-    - name: Generate snapshot Release Tag
-      id: snapshottag 
-      if: github.event.inputs.version == 'snapshot'
-      run: |
-        echo "release_tag=SNAPSHOT_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-        echo "status=success" >> $GITHUB_OUTPUT
-
-    - name: Upload stable firmware to Release
-      uses: softprops/action-gh-release@master
-      if: steps.stabletag.outputs.status == 'success'
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.stabletag.outputs.release_tag }}
-        files: ${{ env.FIRMWARE }}/*
-        body_path: ${{ env.BUILDROOT }}/SHA256SUMS
-
-    - name: Upload snapshot firmware to Release
-      uses: softprops/action-gh-release@master
-      if: steps.snapshottag.outputs.status == 'success'
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.snapshottag.outputs.release_tag }}
-        files: ${{ env.FIRMWARE }}/*
-        body_path: ${{ env.BUILDROOT }}/SHA256SUMS
-
-    - name: Delete workflow runs
-      uses: Mattraks/delete-workflow-runs@main
-      with:
-        retain_days: 1
-        keep_minimum_runs: 3
-
-    - name: Remove old Releases
-      uses: dev-drprasad/delete-older-releases@master
-      with:
-        keep_latest: 3
-        delete_tags: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: steps.organize.outputs.status == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: EA8300_25.12_${{ env.FILE_DATE }}
+          files: ${{ env.FIRMWARE }}/*.bin
+          body: |
+            Build realizado con Image Builder Kit (Rápido).
+            - Dispositivo: Linksys EA8300
+            - Versión: OpenWrt 25.12.0
+            - Malla: B.A.T.M.A.N. Adv
+            - Roaming: DAWN
